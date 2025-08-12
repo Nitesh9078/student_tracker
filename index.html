@@ -36,28 +36,41 @@
 
         <!-- Attendance Tab -->
         <section id="attendanceTab" class="tab-content tab-content--active">
+            <!-- REPLACE your existing attendance-header with this MODIFIED version -->
             <div class="attendance-header">
-                <div class="class-selector">
+                <div class="attendance-controls"> <!-- New wrapper for better layout -->
+                    <div class="form-group">
+                        <label for="attendanceDate" class="form-label">Select Date:</label>
+                        <select id="attendanceDate" class="form-control"></select> <!-- Date selector -->
+                    </div>
+                <div class="form-group">
                     <label for="classSelect" class="form-label">Select Class:</label>
-                    <select id="classSelect" class="form-control">
+                    <select id="classSelect" class="form-control"> <!-- Your existing class selector -->
                         <option value="">Choose a class...</option>
                     </select>
                 </div>
-                <div class="attendance-summary">
-                    <div class="summary-card">
-                        <div class="summary-value" id="totalStudents">0</div>
-                        <div class="summary-label">Total Students</div>
-                    </div>
-                    <div class="summary-card summary-card--success">
-                        <div class="summary-value" id="presentCount">0</div>
-                        <div class="summary-label">Present</div>
-                    </div>
-                    <div class="summary-card summary-card--error">
-                        <div class="summary-value" id="absentCount">0</div>
-                        <div class="summary-label">Absent</div>
-                    </div>
+                <div class="form-group form-group--buttons"> <!-- Group for buttons -->
+                    <button id="loadAttendanceBtn" class="btn btn--primary">Load</button>
+                    <button id="lockDayBtn" class="btn btn--lock">Lock Day</button>
                 </div>
             </div>
+            <!-- The summary cards section remains the same -->
+            <div class="attendance-summary">
+                <div class="summary-card">
+                    <div class="summary-value" id="totalStudents">0</div>
+                    <div class="summary-label">Total Students</div>
+                </div>
+                <div class="summary-card summary-card--success">
+                    <div class="summary-value" id="presentCount">0</div>
+                    <div class="summary-label">Present</div>
+                </div>
+                <div class="summary-card summary-card--error">
+                    <div class="summary-value" id="absentCount">0</div>
+                    <div class="summary-label">Absent</div>
+                </div>
+            </div>
+        </div>
+
 
             <div class="search-bar">
                 <input type="text" id="studentSearch" class="form-control" placeholder="Search students...">
