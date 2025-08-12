@@ -5,7 +5,7 @@ let currentAction = '';
 
 // Nepali calendar data
 const nepaliMonths = [
-    {"en": "Baishakh", "np": "बैशाख", "days": 30},
+    {"en": "Baishakh", "np": "बैशाख", "days": 31},
     {"en": "Jestha", "np": "जेष्ठ", "days": 31},
     {"en": "Ashadh", "np": "आषाढ", "days": 32},
     {"en": "Shrawan", "np": "श्रावण", "days": 32},
