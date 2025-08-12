@@ -3,6 +3,10 @@ let currentClass = '';
 let currentStudent = null;
 let currentAction = '';
 
+// NEW: Global variables for date/class selection in attendance tab
+let selectedAttendanceDate = ''; // YYYY-MM-DD format
+let selectedAttendanceClassId = '';
+
 // Nepali calendar data
 const nepaliMonths = [
     {"en": "Baishakh", "np": "बैशाख", "days": 31},
@@ -24,6 +28,7 @@ const nepaliNumbers = {
     "5": "५", "6": "६", "7": "७", "8": "८", "9": "९"
 };
 
+
 // Utility Functions
 function generateId() {
     return 'id_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
@@ -33,15 +38,32 @@ function convertToNepaliNumbers(num) {
     return num.toString().split('').map(digit => nepaliNumbers[digit] || digit).join('');
 }
 
+// MODIFIED: getNepaliDate to return full date string and formatted string
 function getNepaliDate(date = new Date()) {
     // Simplified BS conversion - adding approximately 56 years and 8 months
+    // This is a rough conversion for display. For accurate date calculations,
+    // you would need a full Nepali calendar library.
     const bsYear = date.getFullYear() + 57;
     const bsMonth = (date.getMonth() + 4) % 12; // Rough conversion
     const bsDay = date.getDate();
-    
+
     const monthName = nepaliMonths[bsMonth].np;
-    return `${convertToNepaliNumbers(bsYear)} साल, ${monthName} ${convertToNepaliNumbers(bsDay)} गते`;
+    
+    // Return an object with both the formatted string and a date key (YYYY-MM-DD for uniqueness)
+    return {
+        formatted: `${convertToNepaliNumbers(bsYear)} साल, ${monthName} ${convertToNepaliNumbers(bsDay)} गते`,
+        dateKey: `${bsYear}-${String(bsMonth + 1).padStart(2, '0')}-${String(bsDay).padStart(2, '0')}`
+    };
 }
+
+// NEW: Helper to get YYYY-MM-DD from a Date object
+function getFormattedGregorianDate(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 
 function formatEnglishDate(date = new Date()) {
     return date.toLocaleDateString('en-US', {
@@ -58,15 +80,15 @@ function showMessage(message, type = 'success') {
     if (existingMessage) {
         existingMessage.remove();
     }
-    
+
     const messageEl = document.createElement('div');
     messageEl.className = `message message--${type}`;
     messageEl.textContent = message;
-    
+
     const mainEl = document.querySelector('main');
     if (mainEl) {
         mainEl.insertBefore(messageEl, mainEl.firstChild);
-        
+
         setTimeout(() => {
             if (messageEl && messageEl.parentNode) {
                 messageEl.remove();
@@ -74,6 +96,7 @@ function showMessage(message, type = 'success') {
         }, 3000);
     }
 }
+
 
 // Local Storage Functions
 function getFromStorage(key, defaultValue = []) {
@@ -149,6 +172,7 @@ function initializeData() {
     }
 }
 
+
 // Data Management Functions
 function getClasses() {
     return getFromStorage('classes', []);
@@ -158,10 +182,12 @@ function saveClasses(classes) {
     return saveToStorage('classes', classes);
 }
 
+// MODIFIED: getAttendanceRecords now returns an object for nested structure
 function getAttendanceRecords() {
-    return getFromStorage('attendanceRecords', []);
+    return getFromStorage('attendanceRecords', {}); // Default is now an empty object
 }
 
+// MODIFIED: saveAttendanceRecords now saves the object
 function saveAttendanceRecords(records) {
     return saveToStorage('attendanceRecords', records);
 }
@@ -194,9 +220,13 @@ function deleteClass(classId) {
     classes = classes.filter(c => c.id !== classId);
     saveClasses(classes);
     
-    // Also remove attendance records for this class
+    // MODIFIED: Also remove attendance records for this class
     let records = getAttendanceRecords();
-    records = records.filter(r => r.classId !== classId);
+    for (const dateKey in records) {
+        if (records[dateKey][classId]) {
+            delete records[dateKey][classId];
+        }
+    }
     saveAttendanceRecords(records);
 }
 
@@ -236,41 +266,81 @@ function deleteStudent(classId, studentId) {
         classes[classIndex].students = classes[classIndex].students.filter(s => s.id !== studentId);
         saveClasses(classes);
         
-        // Also remove attendance records for this student
+        // MODIFIED: Also remove attendance records for this student
         let records = getAttendanceRecords();
-        records = records.filter(r => r.studentId !== studentId);
+        for (const dateKey in records) {
+            if (records[dateKey][classId] && records[dateKey][classId].records) {
+                records[dateKey][classId].records = records[dateKey][classId].records.filter(r => r.studentId !== studentId);
+            }
+        }
         saveAttendanceRecords(records);
     }
 }
 
-function saveAttendance(classId, studentId, status, date = new Date()) {
+// MODIFIED: saveAttendance to use nested structure and respect locked status
+function saveAttendance(classId, studentId, status, dateStr) { // dateStr is now passed directly
     const records = getAttendanceRecords();
-    const dateStr = date.toISOString().split('T')[0];
-    const nepaliDate = getNepaliDate(date);
+
+    // Ensure structures exist
+    if (!records[dateStr]) {
+        records[dateStr] = {};
+    }
+    if (!records[dateStr][classId]) {
+        records[dateStr][classId] = { locked: false, records: [] };
+    }
+
+    const classAttendance = records[dateStr][classId];
+
+    // Check if the attendance for this day/class is locked
+    if (classAttendance.locked) {
+        showMessage('Attendance for this day and class is LOCKED. Cannot make changes.', 'error');
+        return false; // Indicate that save was blocked
+    }
     
-    // Remove existing record for this date/student
-    const filteredRecords = records.filter(r => 
-        !(r.date === dateStr && r.studentId === studentId)
-    );
+    // Remove existing record for this student on this day
+    classAttendance.records = classAttendance.records.filter(r => r.studentId !== studentId);
     
     // Add new record
-    filteredRecords.push({
+    classAttendance.records.push({
         id: generateId(),
-        date: dateStr,
-        nepaliDate: nepaliDate,
-        classId: classId,
         studentId: studentId,
         status: status
     });
     
-    saveAttendanceRecords(filteredRecords);
+    saveAttendanceRecords(records);
+    showMessage(`Attendance for ${studentId} marked: ${status}`, 'success');
+    return true; // Indicate that save was successful
 }
 
-function getAttendanceForDate(date = new Date()) {
+// MODIFIED: getAttendanceForDate now expects a date string and returns flat records for display
+function getAttendanceForDateAndClass(dateStr, classId) {
     const records = getAttendanceRecords();
-    const dateStr = date.toISOString().split('T')[0];
-    return records.filter(r => r.date === dateStr);
+    if (records[dateStr] && records[dateStr][classId]) {
+        return records[dateStr][classId].records;
+    }
+    return [];
 }
+
+// NEW: Function to check if a day/class is locked
+function isAttendanceLocked(dateStr, classId) {
+    const records = getAttendanceRecords();
+    return records[dateStr] && records[dateStr][classId] && records[dateStr][classId].locked;
+}
+
+// NEW: Function to lock attendance for a specific day/class
+function lockAttendance(dateStr, classId) {
+    const records = getAttendanceRecords();
+    if (!records[dateStr]) {
+        records[dateStr] = {};
+    }
+    if (!records[dateStr][classId]) {
+        records[dateStr][classId] = { locked: false, records: [] };
+    }
+    records[dateStr][classId].locked = true;
+    saveAttendanceRecords(records);
+    showMessage(`Attendance for ${dateStr} in class ${classId} has been LOCKED!`, 'success');
+}
+
 
 // UI Functions
 function updateDateDisplay() {
@@ -278,20 +348,24 @@ function updateDateDisplay() {
     const nepaliDateEl = document.getElementById('nepaliDate');
     const englishDateEl = document.getElementById('englishDate');
     
+    const nepaliInfo = getNepaliDate(now); // Get the object from getNepaliDate
+    
     if (nepaliDateEl) {
-        nepaliDateEl.textContent = getNepaliDate(now);
+        nepaliDateEl.textContent = nepaliInfo.formatted;
     }
     if (englishDateEl) {
         englishDateEl.textContent = formatEnglishDate(now);
     }
 }
 
+// MODIFIED: populateClassSelectors is now used by populateAttendanceControls too
 function populateClassSelectors() {
     const classes = getClasses();
     console.log('Populating class selectors with:', classes);
     
     const selectors = [
-        { id: 'classSelect', defaultOption: 'Choose a class...' },
+        { id: 'classSelect', defaultOption: 'Choose a class...' }, // Main attendance class selector
+        { id: 'attendanceClass', defaultOption: 'Choose a class...' }, // NEW: Attendance date/class selector
         { id: 'exportClass', defaultOption: 'All Classes' },
         { id: 'studentClass', defaultOption: 'Select Class' }
     ];
@@ -315,6 +389,10 @@ function populateClassSelectors() {
             // Restore previous selection if still valid
             if (currentValue && classes.find(c => c.id === currentValue)) {
                 selectEl.value = currentValue;
+            } else if (selector.id === 'attendanceClass' && classes.length > 0) {
+                // For attendance class selector, default to the first class if available
+                selectEl.value = classes[0].id;
+                selectedAttendanceClassId = classes[0].id;
             }
             
             console.log(`Populated ${selector.id} with ${classes.length} classes`);
@@ -324,7 +402,39 @@ function populateClassSelectors() {
     });
 }
 
-function renderStudentList(classId, searchTerm = '') {
+// NEW: Function to populate date selector
+function populateDateSelector() {
+    const dateSelector = document.getElementById('attendanceDate');
+    if (!dateSelector) {
+        console.warn('attendanceDate element not found');
+        return;
+    }
+
+    const today = new Date();
+    // Clear and add options for past 30 days and future 7 days (or adjust range as needed)
+    dateSelector.innerHTML = '';
+    
+    // Add future days (e.g., next 7 days)
+    for (let i = -7; i <= 0; i++) { // From 7 days in the past up to today
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        const gregorianDateStr = getFormattedGregorianDate(d);
+        const nepaliInfo = getNepaliDate(d);
+        
+        const option = document.createElement('option');
+        option.value = gregorianDateStr;
+        option.textContent = `${nepaliInfo.formatted} (${formatEnglishDate(d)})`;
+        dateSelector.appendChild(option);
+    }
+
+    // Set initial selection to today
+    selectedAttendanceDate = getFormattedGregorianDate(today);
+    dateSelector.value = selectedAttendanceDate;
+}
+
+
+// MODIFIED: renderStudentList now takes date and classId as arguments
+function renderStudentList(dateStr, classId, searchTerm = '') { // MODIFIED: dateStr and classId are now mandatory for attendance
     const classes = getClasses();
     const selectedClass = classes.find(c => c.id === classId);
     const studentListEl = document.getElementById('studentList');
@@ -336,12 +446,29 @@ function renderStudentList(classId, searchTerm = '') {
     
     if (!classId || !selectedClass) {
         studentListEl.innerHTML = '<div class="empty-state"><p>Select a class to view students</p></div>';
-        updateAttendanceSummary([]);
+        updateAttendanceSummary([], []); // Reset summary
         return;
     }
-    
+
+    // NEW: Determine if this specific date and class combination is locked
+    const isLocked = isAttendanceLocked(dateStr, classId);
+    const lockDayBtn = document.getElementById('lockDayBtn');
+    if (lockDayBtn) {
+        if (isLocked) {
+            lockDayBtn.textContent = 'Day Locked';
+            lockDayBtn.disabled = true;
+            lockDayBtn.classList.add('locked');
+            showMessage(`Attendance for ${getNepaliDate(new Date(dateStr)).formatted} in ${selectedClass.name} is LOCKED. No changes allowed.`, 'warning', 5000); // Show for longer
+        } else {
+            lockDayBtn.textContent = 'Lock Day';
+            lockDayBtn.disabled = false;
+            lockDayBtn.classList.remove('locked');
+        }
+    }
+
+
     let students = selectedClass.students || [];
-    console.log(`Rendering ${students.length} students for class ${selectedClass.name}`);
+    console.log(`Rendering ${students.length} students for class ${selectedClass.name} on ${dateStr}`);
     
     // Filter by search term
     if (searchTerm) {
@@ -353,15 +480,16 @@ function renderStudentList(classId, searchTerm = '') {
     
     if (students.length === 0) {
         studentListEl.innerHTML = '<div class="empty-state"><p>No students found</p></div>';
-        updateAttendanceSummary([]);
+        updateAttendanceSummary([], []); // Reset summary
         return;
     }
     
-    const todayAttendance = getAttendanceForDate();
+    // MODIFIED: Get attendance for the specific date and class
+    const dailyClassAttendance = getAttendanceForDateAndClass(dateStr, classId);
     
     const studentsHTML = students.map(student => {
-        const attendance = todayAttendance.find(a => a.studentId === student.id);
-        const status = attendance ? attendance.status : '';
+        const attendance = dailyClassAttendance.find(a => a.studentId === student.id);
+        const status = attendance ? attendance.status : ''; // Default to empty if no record
         
         return `
             <div class="student-item">
@@ -373,11 +501,11 @@ function renderStudentList(classId, searchTerm = '') {
                 </div>
                 <div class="attendance-controls">
                     <label class="attendance-checkbox attendance-checkbox--present">
-                        <input type="radio" name="attendance_${student.id}" value="present" ${status === 'present' ? 'checked' : ''}>
+                        <input type="radio" name="attendance_${student.id}" value="present" ${status === 'present' ? 'checked' : ''} ${isLocked ? 'disabled' : ''}>
                         Present
                     </label>
                     <label class="attendance-checkbox attendance-checkbox--absent">
-                        <input type="radio" name="attendance_${student.id}" value="absent" ${status === 'absent' ? 'checked' : ''}>
+                        <input type="radio" name="attendance_${student.id}" value="absent" ${status === 'absent' ? 'checked' : ''} ${isLocked ? 'disabled' : ''}>
                         Absent
                     </label>
                 </div>
@@ -386,13 +514,14 @@ function renderStudentList(classId, searchTerm = '') {
     }).join('');
     
     studentListEl.innerHTML = studentsHTML;
-    updateAttendanceSummary(students, todayAttendance);
+    updateAttendanceSummary(students, dailyClassAttendance); // MODIFIED: Pass dailyClassAttendance
 }
 
-function updateAttendanceSummary(students, attendanceRecords = []) {
-    const total = students.length;
-    const present = attendanceRecords.filter(a => a.status === 'present').length;
-    const absent = attendanceRecords.filter(a => a.status === 'absent').length;
+
+function updateAttendanceSummary(studentsInClass, attendanceRecordsForDateClass = []) { // MODIFIED: Renamed parameter
+    const total = studentsInClass.length;
+    const present = attendanceRecordsForDateClass.filter(a => a.status === 'present').length;
+    const absent = attendanceRecordsForDateClass.filter(a => a.status === 'absent').length;
     
     const totalEl = document.getElementById('totalStudents');
     const presentEl = document.getElementById('presentCount');
@@ -402,6 +531,7 @@ function updateAttendanceSummary(students, attendanceRecords = []) {
     if (presentEl) presentEl.textContent = present;
     if (absentEl) absentEl.textContent = absent;
 }
+
 
 function renderStudentsTab() {
     const classes = getClasses();
@@ -456,6 +586,7 @@ function renderStudentsTab() {
     studentsGridEl.innerHTML = studentsHTML;
 }
 
+
 function renderClassesTab() {
     const classes = getClasses();
     const classesGridEl = document.getElementById('classesGrid');
@@ -482,6 +613,7 @@ function renderClassesTab() {
     
     classesGridEl.innerHTML = classesHTML;
 }
+
 
 // Tab switching function
 function switchTab(tabName) {
@@ -511,7 +643,25 @@ function switchTab(tabName) {
     } else if (tabName === 'classes') {
         renderClassesTab();
     }
+    // MODIFIED: For attendance tab, re-render based on current selections
+    else if (tabName === 'attendance') {
+        // Ensure selectors are populated and then render student list
+        populateDateSelector();
+        populateClassSelectors(); // This also populates the attendanceClass selector
+        if (selectedAttendanceDate && selectedAttendanceClassId) {
+             renderStudentList(selectedAttendanceDate, selectedAttendanceClassId);
+        } else {
+             // If no class selected yet (e.g. first run), still show empty state
+             document.getElementById('studentList').innerHTML = '<div class="empty-state"><p>Select a class to view students</p></div>';
+             updateAttendanceSummary([], []);
+        }
+    }
+    // MODIFIED: For reports tab, ensure class selector for export is updated
+    else if (tabName === 'reports') {
+        populateClassSelectors();
+    }
 }
+
 
 // Modal Functions
 function showModal(modalId) {
@@ -569,6 +719,7 @@ function showStudentModal(classId = '', studentId = '') {
     showModal('studentModal');
 }
 
+
 function showConfirmDialog(message, onConfirm) {
     const messageEl = document.getElementById('confirmMessage');
     if (messageEl) {
@@ -602,6 +753,7 @@ window.editStudent = function(classId, studentId) {
     showStudentModal(classId, studentId);
 };
 
+
 window.deleteStudentConfirm = function(classId, studentId) {
     const classes = getClasses();
     const cls = classes.find(c => c.id === classId);
@@ -611,13 +763,15 @@ window.deleteStudentConfirm = function(classId, studentId) {
         showConfirmDialog(`Are you sure you want to delete ${student.name}?`, () => {
             deleteStudent(classId, studentId);
             renderStudentsTab();
-            if (currentClass === classId) {
-                renderStudentList(classId);
+            // MODIFIED: Re-render attendance list with selected date and class
+            if (currentClass === classId && selectedAttendanceDate && selectedAttendanceClassId) {
+                renderStudentList(selectedAttendanceDate, selectedAttendanceClassId);
             }
             showMessage('Student deleted successfully');
         });
     }
 };
+
 
 window.editClass = function(classId) {
     const classes = getClasses();
@@ -636,6 +790,7 @@ window.editClass = function(classId) {
     }
 };
 
+
 window.deleteClassConfirm = function(classId) {
     const classes = getClasses();
     const cls = classes.find(c => c.id === classId);
@@ -644,19 +799,22 @@ window.deleteClassConfirm = function(classId) {
         showConfirmDialog(`Are you sure you want to delete ${cls.name}? This will also delete all students and attendance records for this class.`, () => {
             deleteClass(classId);
             renderClassesTab();
-            populateClassSelectors();
-            
-            // Clear attendance view if this was the selected class
-            const classSelect = document.getElementById('classSelect');
+            populateClassSelectors(); // MODIFIED: Call populateClassSelectors instead of specific ones
+
+            // MODIFIED: Clear attendance view if this was the selected class or update if it's the class being viewed
+            const classSelect = document.getElementById('classSelect'); // Main attendance tab selector
             if (classSelect && classSelect.value === classId) {
                 classSelect.value = '';
-                renderStudentList('');
+                // Since selectedAttendanceClassId might be this class, reset it
+                selectedAttendanceClassId = ''; 
+                renderStudentList('', ''); // Pass empty to clear the list
             }
             
             showMessage('Class deleted successfully');
         });
     }
 };
+
 
 // Theme Functions
 function toggleTheme() {
@@ -675,6 +833,7 @@ function toggleTheme() {
     console.log('Theme switched to:', newTheme);
 }
 
+
 function initializeTheme() {
     const savedTheme = localStorage.getItem('theme');
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -689,6 +848,7 @@ function initializeTheme() {
     console.log('Theme initialized to:', theme);
 }
 
+
 // Export Functions
 function exportToCSV() {
     const startDate = document.getElementById('startDate').value;
@@ -700,19 +860,36 @@ function exportToCSV() {
         return;
     }
     
-    const records = getAttendanceRecords();
+    const allRecords = getAttendanceRecords(); // MODIFIED: Get the new nested structure
     const classes = getClasses();
     
-    let filteredRecords = records.filter(r => {
-        const recordDate = new Date(r.date);
+    let filteredRecords = [];
+
+    // MODIFIED: Iterate through the new attendance structure
+    for (const dateKey in allRecords) {
+        const recordDate = new Date(dateKey);
         const start = new Date(startDate);
         const end = new Date(endDate);
-        
-        return recordDate >= start && recordDate <= end;
-    });
-    
-    if (classId) {
-        filteredRecords = filteredRecords.filter(r => r.classId === classId);
+
+        if (recordDate >= start && recordDate <= end) {
+            for (const clsId in allRecords[dateKey]) {
+                if (!classId || clsId === classId) { // Filter by class if selected
+                    const classData = allRecords[dateKey][clsId];
+                    if (classData && classData.records) {
+                        classData.records.forEach(rec => {
+                            filteredRecords.push({
+                                date: dateKey,
+                                classId: clsId,
+                                studentId: rec.studentId,
+                                status: rec.status,
+                                // Add locked status to CSV if needed
+                                locked: classData.locked ? 'Locked' : 'Unlocked'
+                            });
+                        });
+                    }
+                }
+            }
+        }
     }
     
     if (filteredRecords.length === 0) {
@@ -721,17 +898,19 @@ function exportToCSV() {
     }
     
     // Create CSV content
-    const headers = ['Date', 'Nepali Date', 'Class', 'Student Name', 'Status'];
+    const headers = ['Date', 'Nepali Date', 'Class Name', 'Student Name', 'Status']; // MODIFIED: Headers
     const csvContent = [headers];
     
     filteredRecords.forEach(record => {
         const cls = classes.find(c => c.id === record.classId);
+        // Find student directly from the class object, not from 'classes' global
         const student = cls ? cls.students.find(s => s.id === record.studentId) : null;
-        
+        const nepaliDateInfo = getNepaliDate(new Date(record.date)); // Convert back to Nepali for display
+
         if (cls && student) {
             csvContent.push([
                 record.date,
-                record.nepaliDate,
+                nepaliDateInfo.formatted, // Use the formatted Nepali date
                 cls.name,
                 student.name,
                 record.status
@@ -739,7 +918,7 @@ function exportToCSV() {
         }
     });
     
-    const csv = csvContent.map(row => row.join(',')).join('\n');
+    const csv = csvContent.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n'); // MODIFIED: Handle commas in data
     
     // Download CSV
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -755,10 +934,11 @@ function exportToCSV() {
     showMessage('Attendance report exported successfully');
 }
 
+
 function backupData() {
     const data = {
         classes: getClasses(),
-        attendanceRecords: getAttendanceRecords(),
+        attendanceRecords: getAttendanceRecords(), // MODIFIED: Get the new nested structure
         exportDate: new Date().toISOString()
     };
     
@@ -776,6 +956,7 @@ function backupData() {
     showMessage('Data backup created successfully');
 }
 
+
 function restoreData(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -786,23 +967,35 @@ function restoreData(event) {
             const data = JSON.parse(e.target.result);
             
             if (!data.classes || !Array.isArray(data.classes)) {
-                throw new Error('Invalid backup file format');
+                throw new Error('Invalid backup file: classes missing or malformed');
             }
             
-            saveClasses(data.classes);
-            if (data.attendanceRecords) {
-                saveAttendanceRecords(data.attendanceRecords);
+            // MODIFIED: Check for attendanceRecords format, allow empty or correct object
+            if (data.attendanceRecords && typeof data.attendanceRecords !== 'object') {
+                 throw new Error('Invalid backup file: attendanceRecords malformed');
             }
+
+            saveClasses(data.classes);
+            saveAttendanceRecords(data.attendanceRecords || {}); // MODIFIED: Save empty object if null
             
             // Refresh all displays
             populateClassSelectors();
+            populateDateSelector(); // NEW: Refresh date selector
             renderClassesTab();
             renderStudentsTab();
-            renderStudentList('');
+            // MODIFIED: Re-render attendance list based on current selection or default
+            if (selectedAttendanceDate && selectedAttendanceClassId) {
+                renderStudentList(selectedAttendanceDate, selectedAttendanceClassId);
+            } else {
+                // If no class was previously selected, show empty state
+                document.getElementById('studentList').innerHTML = '<div class="empty-state"><p>Select a class to view students</p></div>';
+                updateAttendanceSummary([], []);
+            }
             
-            showMessage('Data restored successfully');
+            showMessage('Data restored successfully', 'success');
         } catch (error) {
-            showMessage('Error restoring data: Invalid file format', 'error');
+            console.error('Error restoring data:', error);
+            showMessage(`Error restoring data: ${error.message || 'Invalid file format'}`, 'error');
         }
     };
     
@@ -811,6 +1004,7 @@ function restoreData(event) {
     // Reset file input
     event.target.value = '';
 }
+
 
 // Event Listeners
 function initializeEventListeners() {
@@ -827,21 +1021,59 @@ function initializeEventListeners() {
         });
     });
     
-    // Class selection
-    const classSelect = document.getElementById('classSelect');
-    if (classSelect) {
-        classSelect.addEventListener('change', (e) => {
-            currentClass = e.target.value;
-            console.log('Class selected:', currentClass);
-            renderStudentList(currentClass);
+    // MODIFIED: Attendance date/class selectors and Load button
+    const attendanceDateSelect = document.getElementById('attendanceDate');
+    const attendanceClassSelect = document.getElementById('classSelect'); // This is already the attendance class selector in your HTML
+    const loadAttendanceBtn = document.getElementById('loadAttendanceBtn');
+    const lockDayBtn = document.getElementById('lockDayBtn'); // NEW: Lock Day Button
+
+    if (attendanceDateSelect) {
+        attendanceDateSelect.addEventListener('change', (e) => {
+            selectedAttendanceDate = e.target.value;
+            console.log('Attendance Date selected:', selectedAttendanceDate);
         });
     }
     
-    // Student search
+    if (attendanceClassSelect) {
+        attendanceClassSelect.addEventListener('change', (e) => { // Using existing classSelect for attendance class
+            selectedAttendanceClassId = e.target.value;
+            console.log('Attendance Class selected:', selectedAttendanceClassId);
+        });
+    }
+
+    if (loadAttendanceBtn) {
+        loadAttendanceBtn.addEventListener('click', () => {
+            if (selectedAttendanceDate && selectedAttendanceClassId) {
+                renderStudentList(selectedAttendanceDate, selectedAttendanceClassId);
+            } else {
+                showMessage('Please select both a date and a class to load attendance.', 'error');
+            }
+        });
+    }
+
+    // NEW: Lock Day Button Listener
+    if (lockDayBtn) {
+        lockDayBtn.addEventListener('click', () => {
+            if (!selectedAttendanceDate || !selectedAttendanceClassId) {
+                showMessage('Please select a date and a class first.', 'error');
+                return;
+            }
+
+            // Confirm with user before locking
+            showConfirmDialog(`Are you sure you want to LOCK attendance for ${getNepaliDate(new Date(selectedAttendanceDate)).formatted} in class ${getClasses().find(c => c.id === selectedAttendanceClassId)?.name || 'Unknown Class'}? This action is irreversible!`, () => {
+                lockAttendance(selectedAttendanceDate, selectedAttendanceClassId);
+                // Re-render to show disabled checkboxes and locked button state
+                renderStudentList(selectedAttendanceDate, selectedAttendanceClassId);
+            });
+        });
+    }
+
+    // Student search (remains the same)
     const studentSearch = document.getElementById('studentSearch');
     if (studentSearch) {
         studentSearch.addEventListener('input', (e) => {
-            renderStudentList(currentClass, e.target.value);
+            // MODIFIED: Pass selected date and class to search
+            renderStudentList(selectedAttendanceDate, selectedAttendanceClassId, e.target.value);
         });
     }
     
@@ -854,17 +1086,24 @@ function initializeEventListeners() {
                 const status = e.target.value;
                 console.log('Attendance marked:', studentId, status);
                 
-                saveAttendance(currentClass, studentId, status);
+                // MODIFIED: saveAttendance now returns a boolean indicating success (not locked)
+                const saveSuccessful = saveAttendance(selectedAttendanceClassId, studentId, status, selectedAttendanceDate);
                 
-                // Update summary
-                const todayAttendance = getAttendanceForDate();
-                const classes = getClasses();
-                const selectedClass = classes.find(c => c.id === currentClass);
-                if (selectedClass) {
-                    updateAttendanceSummary(selectedClass.students, todayAttendance);
+                if (saveSuccessful) {
+                    // Update summary only if save was successful
+                    const dailyClassAttendance = getAttendanceForDateAndClass(selectedAttendanceDate, selectedAttendanceClassId);
+                    const classes = getClasses();
+                    const selectedClass = classes.find(c => c.id === selectedAttendanceClassId);
+                    if (selectedClass) {
+                        updateAttendanceSummary(selectedClass.students, dailyClassAttendance);
+                    }
+                } else {
+                    // If save was blocked, revert the checkbox state
+                    // This is important to visually reflect the locked status
+                    const currentStatus = getAttendanceForDateAndClass(selectedAttendanceDate, selectedAttendanceClassId)
+                                          .find(r => r.studentId === studentId)?.status || '';
+                    e.target.checked = (e.target.value === currentStatus); // Revert to old status
                 }
-                
-                showMessage(`Attendance marked: ${status}`, 'success');
             }
         });
         
@@ -880,7 +1119,7 @@ function initializeEventListeners() {
         });
     }
     
-    // Modal controls
+    // Modal controls (remain the same)
     document.addEventListener('click', (e) => {
         if (e.target.classList.contains('modal-close')) {
             const modal = e.target.closest('.modal');
@@ -895,7 +1134,7 @@ function initializeEventListeners() {
         }
     });
     
-    // Add student button
+    // Add student button (remains the same)
     const addStudentBtn = document.getElementById('addStudentBtn');
     if (addStudentBtn) {
         addStudentBtn.addEventListener('click', () => {
@@ -903,7 +1142,7 @@ function initializeEventListeners() {
         });
     }
     
-    // Student form submission
+    // Student form submission (remains the same)
     const studentForm = document.getElementById('studentForm');
     if (studentForm) {
         studentForm.addEventListener('submit', (e) => {
@@ -929,19 +1168,20 @@ function initializeEventListeners() {
             if (currentStudent && currentClass) {
                 // Update existing student
                 updateStudent(classId, currentStudent, studentData);
-                showMessage('Student updated successfully');
+                showMessage('Student updated successfully', 'success');
             } else {
                 // Add new student
                 addStudent(classId, studentData);
-                showMessage('Student added successfully');
+                showMessage('Student added successfully', 'success');
             }
             
             hideModal('studentModal');
             populateClassSelectors();
             renderStudentsTab();
             
-            if (currentClass === classId) {
-                renderStudentList(classId);
+            // MODIFIED: Re-render attendance with current selected date/class if relevant
+            if (selectedAttendanceDate && selectedAttendanceClassId) {
+                renderStudentList(selectedAttendanceDate, selectedAttendanceClassId);
             }
             
             currentStudent = null;
@@ -949,7 +1189,7 @@ function initializeEventListeners() {
         });
     }
     
-    // Add class button
+    // Add class button (remains the same)
     const addClassBtn = document.getElementById('addClassBtn');
     if (addClassBtn) {
         addClassBtn.addEventListener('click', () => {
@@ -965,7 +1205,7 @@ function initializeEventListeners() {
         });
     }
     
-    // Class form submission
+    // Class form submission (remains the same)
     const classForm = document.getElementById('classForm');
     if (classForm) {
         classForm.addEventListener('submit', (e) => {
@@ -980,10 +1220,10 @@ function initializeEventListeners() {
             
             if (currentAction === 'edit' && currentClass) {
                 updateClass(currentClass, { name: className });
-                showMessage('Class updated successfully');
+                showMessage('Class updated successfully', 'success');
             } else {
                 addClass(className);
-                showMessage('Class added successfully');
+                showMessage('Class added successfully', 'success');
             }
             
             hideModal('classModal');
@@ -995,7 +1235,7 @@ function initializeEventListeners() {
         });
     }
     
-    // Export and backup buttons
+    // Export and backup buttons (remain the same except for data structure)
     const exportCsvBtn = document.getElementById('exportCsvBtn');
     if (exportCsvBtn) {
         exportCsvBtn.addEventListener('click', exportToCSV);
@@ -1016,13 +1256,13 @@ function initializeEventListeners() {
         restoreFile.addEventListener('change', restoreData);
     }
     
-    // Theme toggle
+    // Theme toggle (remains the same)
     const themeToggle = document.getElementById('themeToggle');
     if (themeToggle) {
         themeToggle.addEventListener('click', toggleTheme);
     }
     
-    // Set default date range for export
+    // Set default date range for export (remains the same)
     const today = new Date();
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     
@@ -1039,6 +1279,7 @@ function initializeEventListeners() {
     console.log('Event listeners initialized successfully');
 }
 
+
 // Initialize Application
 function initializeApp() {
     console.log('Starting Student Attendance Tracker initialization...');
@@ -1054,16 +1295,23 @@ function initializeApp() {
         updateDateDisplay();
         
         // Populate dropdowns
-        populateClassSelectors();
-        
+        populateClassSelectors(); // This now also populates attendanceClass
+        populateDateSelector(); // NEW: Populate date selector
+
         // Initialize event listeners
         initializeEventListeners();
         
         // Set up periodic date updates
         setInterval(updateDateDisplay, 60000);
         
-        // Initial render of attendance tab
-        renderStudentList('');
+        // Initial render of attendance tab - based on default selected values
+        // MODIFIED: Initial render uses the newly set selectedAttendanceDate/ClassId
+        if (selectedAttendanceDate && selectedAttendanceClassId) {
+             renderStudentList(selectedAttendanceDate, selectedAttendanceClassId);
+        } else {
+             document.getElementById('studentList').innerHTML = '<div class="empty-state"><p>Select a class to view students</p></div>';
+             updateAttendanceSummary([], []);
+        }
         
         console.log('Student Attendance Tracker initialized successfully');
         
@@ -1078,6 +1326,7 @@ function initializeApp() {
         showMessage('Error initializing application', 'error');
     }
 }
+
 
 // Start the application when DOM is loaded
 if (document.readyState === 'loading') {
