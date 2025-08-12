@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Attendance Tracker</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <h1>विद्यार्थी उपस्थिति ट्र्याकर</h1>
+                <p class="subtitle">Student Attendance Tracker</p>
+                <div class="date-display">
+                    <div class="nepali-date" id="nepaliDate">२०८२ साल, भाद्र २३ गते</div>
+                    <div class="english-date" id="englishDate">Friday, August 08, 2025</div>
+                </div>
+                <button class="btn btn--outline theme-toggle" id="themeToggle">
+                    🌙 Dark Mode
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container">
+        <!-- Navigation Tabs -->
+        <nav class="tabs">
+            <button class="tab tab--active" data-tab="attendance">Attendance</button>
+            <button class="tab" data-tab="students">Students</button>
+            <button class="tab" data-tab="classes">Classes</button>
+            <button class="tab" data-tab="reports">Reports</button>
+        </nav>
+
+        <!-- Attendance Tab -->
+        <section id="attendanceTab" class="tab-content tab-content--active">
+            <div class="attendance-header">
+                <div class="class-selector">
+                    <label for="classSelect" class="form-label">Select Class:</label>
+                    <select id="classSelect" class="form-control">
+                        <option value="">Choose a class...</option>
+                    </select>
+                </div>
+                <div class="attendance-summary">
+                    <div class="summary-card">
+                        <div class="summary-value" id="totalStudents">0</div>
+                        <div class="summary-label">Total Students</div>
+                    </div>
+                    <div class="summary-card summary-card--success">
+                        <div class="summary-value" id="presentCount">0</div>
+                        <div class="summary-label">Present</div>
+                    </div>
+                    <div class="summary-card summary-card--error">
+                        <div class="summary-value" id="absentCount">0</div>
+                        <div class="summary-label">Absent</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="search-bar">
+                <input type="text" id="studentSearch" class="form-control" placeholder="Search students...">
+            </div>
+
+            <div class="student-list" id="studentList">
+                <div class="empty-state">
+                    <p>Select a class to view students</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Students Tab -->
+        <section id="studentsTab" class="tab-content">
+            <div class="section-header">
+                <h2>Student Management</h2>
+                <button class="btn btn--primary" id="addStudentBtn">Add Student</button>
+            </div>
+            <div class="students-grid" id="studentsGrid"></div>
+        </section>
+
+        <!-- Classes Tab -->
+        <section id="classesTab" class="tab-content">
+            <div class="section-header">
+                <h2>Class Management</h2>
+                <button class="btn btn--primary" id="addClassBtn">Add Class</button>
+            </div>
+            <div class="classes-grid" id="classesGrid"></div>
+        </section>
+
+        <!-- Reports Tab -->
+        <section id="reportsTab" class="tab-content">
+            <div class="section-header">
+                <h2>Reports & Export</h2>
+            </div>
+            <div class="reports-content">
+                <div class="export-section">
+                    <h3>Export Attendance</h3>
+                    <div class="export-controls">
+                        <div class="form-group">
+                            <label for="exportClass" class="form-label">Class:</label>
+                            <select id="exportClass" class="form-control">
+                                <option value="">All Classes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="startDate" class="form-label">Start Date:</label>
+                            <input type="date" id="startDate" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="endDate" class="form-label">End Date:</label>
+                            <input type="date" id="endDate" class="form-control">
+                        </div>
+                        <button class="btn btn--primary" id="exportCsvBtn">Export CSV</button>
+                    </div>
+                </div>
+                <div class="backup-section">
+                    <h3>Backup & Restore</h3>
+                    <div class="backup-controls">
+                        <button class="btn btn--outline" id="backupBtn">Backup Data</button>
+                        <input type="file" id="restoreFile" accept=".json" style="display: none;">
+                        <button class="btn btn--outline" id="restoreBtn">Restore Data</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Student Profile Modal -->
+    <div id="studentModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Student Profile</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="studentForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="studentName" class="form-label">Full Name *</label>
+                        <input type="text" id="studentName" name="name" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="studentPhone" class="form-label">Phone Number</label>
+                        <input type="tel" id="studentPhone" name="phone" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="parentName" class="form-label">Parent/Guardian Name</label>
+                        <input type="text" id="parentName" name="parentName" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="parentPhone" class="form-label">Parent Phone</label>
+                        <input type="tel" id="parentPhone" name="parentPhone" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="studentAddress" class="form-label">Address</label>
+                        <textarea id="studentAddress" name="address" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="dateOfBirth" class="form-label">Date of Birth</label>
+                        <input type="date" id="dateOfBirth" name="dateOfBirth" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="studentClass" class="form-label">Class *</label>
+                        <select id="studentClass" name="classId" class="form-control" required>
+                            <option value="">Select Class</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn--outline modal-close">Cancel</button>
+                    <button type="submit" class="btn btn--primary">Save Student</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Class Modal -->
+    <div id="classModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="classModalTitle">Add Class</h3>
+                <button class="modal-close">&times;</button>
+            </div>
+            <form id="classForm">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="className" class="form-label">Class Name *</label>
+                        <input type="text" id="className" name="name" class="form-control" required placeholder="e.g., Class 5A">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn--outline modal-close">Cancel</button>
+                    <button type="submit" class="btn btn--primary">Save Class</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirm Dialog -->
+    <div id="confirmModal" class="modal hidden">
+        <div class="modal-content modal-content--small">
+            <div class="modal-header">
+                <h3>Confirm Action</h3>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage">Are you sure?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn--outline" id="confirmCancel">Cancel</button>
+                <button type="button" class="btn btn--primary" id="confirmOk">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
